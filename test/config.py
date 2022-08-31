@@ -1,9 +1,0 @@
-PROJECT_ID = 'churn-smu'
-BUCKET_NAME = 'practice-smu-123'
-data_path = 'gs://practice-smu-123/churn/dev/dev.csv'
-schema_path = 'gs://practice-smu-123/churn/metadata/schema/orig_stats.pb'
-input_path = 'gs://practice-smu-123/churn/temp/in_data.csv'
-output_path = 'gs://practice-smu-123/churn/temp/out_data.csv'
-REGION = 'asia-southeast1'
-MODEL_URI = 'gs://practice-smu-123/churn/model/model_rf.pkl'
-SERVING_IMAGE_URI = "europe-docker.pkg.dev/vertex-ai/prediction/sklearn-cpu.0-24:latest"
