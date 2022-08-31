@@ -1,0 +1,21 @@
+
+name: data_encoding_scaling_store
+description: Fit transform OneHotEncoder and StandardScaler and upload model artifacts to GCS
+inputs:
+- {name: pre_enc_dataset, type: Dataset}
+- {name: bucket_name, type: String}
+outputs:
+- {name: post_enc_dataset, type: Dataset}
+implementation:
+  container:
+    image: gcr.io/churn-smu/churn-data-enc-scl-store:latest
+    command:
+    - python
+    - enc_scl_store.py
+    args:
+    - --pre_enc_dataset
+    - {inputUri: pre_enc_dataset}
+    - --bucket_name
+    - {inputValue: bucket_name}
+    - --post_enc_dataset
+    - {outputUri: post_enc_dataset}

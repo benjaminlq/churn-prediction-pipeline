@@ -1,0 +1,56 @@
+name: Test endpoint
+inputs:
+- {name: project, type: String}
+- {name: location, type: String}
+- {name: endpoint, type: String}
+outputs:
+- {name: endpoint_status, type: String}
+implementation:
+  container:
+    image: python:3.9
+    command:
+    - sh
+    - -c
+    - |2
+
+      if ! [ -x "$(command -v pip)" ]; then
+          python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip
+      fi
+
+      PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet     --no-warn-script-location 'google-cloud-aiplatform' 'kfp==1.8.12' && "$0" "$@"
+    - sh
+    - -ec
+    - |
+      program_path=$(mktemp -d)
+      printf "%s" "$0" > "$program_path/ephemeral_component.py"
+      python3 -m kfp.v2.components.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+    - |2+
+
+      import kfp
+      from kfp.v2 import dsl
+      from kfp.v2.dsl import *
+      from typing import *
+
+      def test_endpoint(project: str,
+                        location: str,
+                        endpoint: str,) -> NamedTuple("output",[("endpoint_status",str)]):
+
+          from google.cloud import aiplatform
+
+          aiplatform.init(project=project, location=location)
+
+          instance = [[0.0, 1.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0,
+                       0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 1.0,
+                       0.0, 0.0, -0.210, -0.695, 0.341, -0.528, 1.282, -1.632, 1.568, 1.309]]
+
+          endpoint = aiplatform.Endpoint(endpoint)
+
+          prediction = endpoint.predict(instances=instance)
+          assert int(prediction[0][0]) in [0, 1], "Prediction Error"
+          return ("OK",)
+
+    args:
+    - --executor_input
+    - {executorInput: null}
+    - --function_to_execute
+    - test_endpoint

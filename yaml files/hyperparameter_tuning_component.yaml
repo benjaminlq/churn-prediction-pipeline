@@ -1,0 +1,17 @@
+
+name: hyperparameter_tuning
+description: Perform Hyperparameter Tuning and Store Data inside GCS as json
+inputs:
+- {name: dataset, type: Dataset}
+- {name: bucket_name, type: String}
+implementation:
+  container:
+    image: gcr.io/churn-smu/churn-data-hyperparameter_tuning:latest
+    command:
+    - python
+    - hyperparameter_tuning.py
+    args:
+    - --dataset
+    - {inputUri: dataset}
+    - --bucket_name
+    - {inputValue: bucket_name}

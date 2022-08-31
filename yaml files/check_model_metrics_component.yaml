@@ -1,0 +1,22 @@
+
+name: check_model_metrics
+description: Perform model metrics check for deployment
+inputs:
+- {name: metrics, type: String}
+- {name: threshold_dict, type: String}
+outputs:
+- {name: deploy, type: String}
+implementation:
+  container:
+    image: gcr.io/churn-smu/churn-data-check_model_metrics:latest
+    command:
+    - python
+    - check_model_metrics.py
+    args:
+    - --base_metrics
+    - {inputValue: metrics}
+    - --threshold_dict
+    - {inputValue: threshold_dict}
+    - --deploy
+    - {outputUri: deploy}
+

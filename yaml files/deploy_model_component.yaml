@@ -1,0 +1,24 @@
+
+name: deploy_model
+description: Deploy
+inputs:
+- {name: model, type: String}
+- {name: project, type: String}
+- {name: region, type: String}
+- {name: serving_container_image_uri, type: String}
+implementation:
+  container:
+    image: gcr.io/churn-smu/churn-data-deploy_model:latest
+    command:
+    - python
+    - deploy_model.py
+    args:
+    - --model
+    - {inputUri: model}
+    - --project
+    - {inputValue: project}
+    - --region
+    - {inputValue: region}
+    - --serving_container_image_uri
+    - {inputValue: serving_container_image_uri}
+

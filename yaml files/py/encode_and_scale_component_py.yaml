@@ -1,0 +1,57 @@
+name: Encode and scale
+inputs:
+- {name: pre_enc_dataset, type: Dataset}
+- {name: bucket_name, type: String}
+outputs:
+- {name: post_enc_dataset, type: Dataset}
+implementation:
+  container:
+    image: python:3.9
+    command:
+    - sh
+    - -c
+    - |2
+
+      if ! [ -x "$(command -v pip)" ]; then
+          python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip
+      fi
+
+      PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet     --no-warn-script-location 'pandas' 'sklearn' 'numpy' 'google.cloud' 'kfp==1.8.12' && "$0" "$@"
+    - sh
+    - -ec
+    - |
+      program_path=$(mktemp -d)
+      printf "%s" "$0" > "$program_path/ephemeral_component.py"
+      python3 -m kfp.v2.components.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+    - "\nimport kfp\nfrom kfp.v2 import dsl\nfrom kfp.v2.dsl import *\nfrom typing\
+      \ import *\n\ndef encode_and_scale(pre_enc_dataset: Input[Dataset],\n      \
+      \               post_enc_dataset: Output[Dataset],\n                     bucket_name:\
+      \ str,\n                     ):\n\n    import pandas as pd\n    import numpy\
+      \ as np\n    import re\n    import pickle\n    from google.cloud import storage\n\
+      \    from sklearn.preprocessing import OneHotEncoder, StandardScaler\n\n   \
+      \ NUMERICAL_FEATURE_NAMES = [\n        \"SUBS_TENURE\",\n        \"TOT_DAY_LAST_COMPLAINT_CNT\"\
+      ,\n        \"TOT_DAY_LAST_SUSPENDED_CNT\",\n        \"MTH_TO_SUBS_END_CNT\"\
+      ,\n        'REV_AMT_BASE_1',\n        'REV_AMT_BASE_2',\n        'CUST_AGE',\n\
+      \        'PCT_CHNG_IB_SMS_CNT']\n\n    EMBEDDING_CATEGORICAL_FEATURES ={\n \
+      \       \"x0_\" :\"GENDER_CD\",\n        \"x1_\" :\"EDUCATION_CD\",\n      \
+      \  \"x2_\" :\"TOT_SRV_DROPPED_CNT\",\n        \"x3_\" :\"TOT_OB_CALL_INTL_ROAM_CNT\"\
+      ,\n        \"x4_\" :'BARRING_REASON_CD', \n        \"x5_\" :\"TOT_SRV_ADDED_CNT\"\
+      }\n\n    TARGET_LABEL = ['CHURN_FLG']\n\n    pre_data = pd.read_csv(pre_enc_dataset.path\
+      \ + '.csv')\n    pre_data_cat = pre_data[EMBEDDING_CATEGORICAL_FEATURES.values()]\n\
+      \    pre_data_num = pre_data[NUMERICAL_FEATURE_NAMES]\n\n    bucket = storage.Client().bucket(bucket_name)\n\
+      \n    blob = bucket.blob(\"churn/artifact/preprocess/encoder.pkl\")\n    enc_name\
+      \ = \"encoder.pkl\"\n    blob.download_to_filename(enc_name)\n    file = open(enc_name,\
+      \ 'rb')\n    enc = pickle.load(file)\n    file.close()\n\n    blob = bucket.blob(\"\
+      churn/artifact/preprocess/scaler.pkl\")\n    scl_name = \"scaler.pkl\"\n   \
+      \ blob.download_to_filename(scl_name)\n    file = open(scl_name, 'rb')\n   \
+      \ scl = pickle.load(file)\n    file.close()\n    enc_data = enc.transform(pre_data_cat)\n\
+      \    scl_data = scl.transform(pre_data_num)\n\n    column_labels = list(enc.get_feature_names_out())\
+      \ + NUMERICAL_FEATURE_NAMES + TARGET_LABEL\n    out_df = pd.DataFrame(np.concatenate((enc_data.toarray(),\
+      \ scl_data, pre_data[TARGET_LABEL].values),axis = 1),\n                    \
+      \      columns = column_labels)\n    out_df.to_csv(post_enc_dataset.path + \"\
+      .csv\" , index=False, encoding='utf-8-sig')\n\n"
+    args:
+    - --executor_input
+    - {executorInput: null}
+    - --function_to_execute
+    - encode_and_scale

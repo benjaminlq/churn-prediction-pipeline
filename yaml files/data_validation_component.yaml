@@ -1,0 +1,33 @@
+
+name: data_validation
+description: Data Validation
+inputs:
+- {name: input_data, type: Dataset}
+- {name: project_id, type: String}
+- {name: gcs_temp_location, type: String}
+- {name: region, type: String}
+- {name: gcs_staging_location, type: String}
+- {name: bucket, type: String}
+outputs:
+- {name: output_data, type: Dataset}
+implementation:
+  container:
+    image: gcr.io/churn-smu/churn-data-tfdv:latest
+    command:
+    - python
+    - tfdv.py
+    args:
+    - --input_data
+    - {inputUri: input_data}
+    - --dataset
+    - {outputUri: dataset}
+    - --project_id
+    - {inputValue: project_id}
+    - --gcs_temp_location
+    - {inputValue: gcs_temp_location}
+    - --region
+    - {inputValue: region}
+    - --gcs_staging_location
+    - {inputValue: gcs_staging_location}
+    - --bucket
+    - {inputValue: bucket}

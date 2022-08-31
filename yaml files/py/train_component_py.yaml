@@ -1,0 +1,115 @@
+name: Train churn
+inputs:
+- {name: dataset, type: Dataset}
+- {name: bucket_name, type: String}
+outputs:
+- {name: model, type: Model}
+- {name: classification_metrics, type: ClassificationMetrics}
+- {name: base_metrics, type: Metrics}
+- {name: feature_importance, type: Dataset}
+implementation:
+  container:
+    image: python:3.9
+    command:
+    - sh
+    - -c
+    - |2
+
+      if ! [ -x "$(command -v pip)" ]; then
+          python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip
+      fi
+
+      PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet     --no-warn-script-location 'pandas' 'sklearn' 'imbalanced-learn' 'google.cloud' 'kfp==1.8.12' && "$0" "$@"
+    - sh
+    - -ec
+    - |
+      program_path=$(mktemp -d)
+      printf "%s" "$0" > "$program_path/ephemeral_component.py"
+      python3 -m kfp.v2.components.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+    - |2+
+
+      import kfp
+      from kfp.v2 import dsl
+      from kfp.v2.dsl import *
+      from typing import *
+
+      def train_churn(dataset: Input[Dataset],
+                      model: Output[Model],
+                      classification_metrics: Output[ClassificationMetrics],
+                      base_metrics: Output[Metrics],
+                      feature_importance: Output[Dataset],
+                      bucket_name: str,):
+
+          import pandas as pd
+          import pickle
+          from sklearn.ensemble import RandomForestClassifier
+          from sklearn.linear_model import LogisticRegression
+          from sklearn.model_selection import train_test_split as tts
+          from sklearn.metrics import roc_curve, confusion_matrix, f1_score
+          from imblearn.over_sampling import RandomOverSampler
+          from google.cloud import storage
+          import operator
+          import json
+
+          df = pd.read_csv(dataset.path + ".csv")
+          feature_label = df.columns[:-1]
+          data = df.values
+
+          X = data[:,:-1]
+          y = data[:,-1].astype(int)
+
+          X_train, X_test, y_train, y_test = tts(X, y, test_size = 0.2, random_state = 2022)
+          oversample = RandomOverSampler(sampling_strategy='minority')
+          X_train, y_train = oversample.fit_resample(X_train, y_train)
+
+          bucket = storage.Client().bucket(bucket_name)
+          blob = bucket.blob("churn/metadata/hyper.pkl")
+          hyper_name = "hyper.pkl"
+          blob.download_to_filename(hyper_name)
+          file = open(hyper_name, 'rb')
+          hyperparameters = pickle.load(file)
+          file.close()
+
+          model_rf = RandomForestClassifier(n_estimators = 20)
+          model_rf.set_params(**hyperparameters)
+
+          model_rf.fit(X_train, y_train)
+
+          feature_importances = model_rf.feature_importances_
+
+          rf_feature_importance = {feature_label[i] : model_rf.feature_importances_[i]
+                                      for i in range(len(model_rf.feature_importances_))}
+          rf_feature_importance = dict(sorted(rf_feature_importance.items(), reverse = True,
+                                              key=operator.itemgetter(1)))
+          feature_importance_df = pd.DataFrame([rf_feature_importance.keys(),rf_feature_importance.values()],
+                                              index = ["Feature","Importance"]).transpose()
+
+          feature_importance_df.to_csv(feature_importance.path + ".csv", index=False,
+                                       header = False, encoding='utf-8-sig')
+
+          blob = bucket.blob('{}/{}'.format("churn/metadata", feature_importance.path + ".csv"))
+          blob.upload_from_filename(feature_importance.path + ".csv")
+
+          model.metadata["frameword"] = "rf"
+          file_name = model.path + f'.pkl'
+          with open(file_name, 'wb') as file:
+              pickle.dump(model_rf, file)
+
+          y_preds = model_rf.predict(X_test)
+
+          y_scores = model_rf.predict_proba(X_test)[:,1]
+          fpr, tpr, thresholds = roc_curve(y_true = y_test, y_score = y_scores, pos_label = True)
+          classification_metrics.log_roc_curve(fpr.tolist(), tpr.tolist(),thresholds.tolist())
+
+          classification_metrics.log_confusion_matrix(["False","True"],confusion_matrix(y_test, y_preds).tolist())
+
+          f1_score = f1_score(y_test, y_preds)
+        #  thresholds_dict = json.loads(thresholds_dict_str)
+          model.metadata["f1_score"] = float(f1_score)
+          base_metrics.log_metric("f1_score",float(f1_score))
+
+    args:
+    - --executor_input
+    - {executorInput: null}
+    - --function_to_execute
+    - train_churn

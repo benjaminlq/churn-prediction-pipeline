@@ -1,0 +1,30 @@
+
+name: training
+description: Perform training and store artifacts
+inputs:
+- {name: dataset, type: Dataset}
+- {name: bucket_name, type: String}
+outputs:
+- {name: model, type: Model}
+- {name: classification_metrics, type: ClassificationMetrics}
+- {name: base_metrics, type: Metrics}
+- {name: feature_importance, type: Dataset}
+implementation:
+  container:
+    image: gcr.io/churn-smu/churn-data-training:latest
+    command:
+    - python
+    - training.py
+    args:
+    - --dataset
+    - {inputUri: dataset}
+    - --bucket_name
+    - {inputValue: bucket_name}
+    - --model
+    - {outputUri: model}
+    - --classification_metrics
+    - {outputUri: classification_metrics}
+    - --base_metrics
+    - {outputUri: base_metrics}
+    - --feature_importance
+    - {outputUri: feature_importance}

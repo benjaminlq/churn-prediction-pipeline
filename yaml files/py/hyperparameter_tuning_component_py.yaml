@@ -1,0 +1,50 @@
+name: Hyperparameter tuning
+inputs:
+- {name: dataset, type: Dataset}
+- {name: bucket_name, type: String}
+outputs:
+- {name: hyperparams, type: JsonObject}
+implementation:
+  container:
+    image: python:3.9
+    command:
+    - sh
+    - -c
+    - |2
+
+      if ! [ -x "$(command -v pip)" ]; then
+          python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip
+      fi
+
+      PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet     --no-warn-script-location 'pandas' 'sklearn' 'imbalanced-learn' 'google.cloud' 'kfp==1.8.12' && "$0" "$@"
+    - sh
+    - -ec
+    - |
+      program_path=$(mktemp -d)
+      printf "%s" "$0" > "$program_path/ephemeral_component.py"
+      python3 -m kfp.v2.components.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+    - "\nimport kfp\nfrom kfp.v2 import dsl\nfrom kfp.v2.dsl import *\nfrom typing\
+      \ import *\n\ndef hyperparameter_tuning(dataset: Input[Dataset],\n         \
+      \                 bucket_name: str,\n                          ) -> NamedTuple(\"\
+      output\",[(\"hyperparams\",dict)]):\n\n    import pandas as pd\n    from sklearn.model_selection\
+      \ import GridSearchCV\n    from sklearn.ensemble import RandomForestClassifier\n\
+      \    from imblearn.over_sampling import RandomOverSampler\n    import pickle\n\
+      \    from google.cloud import storage\n\n    param_grid = {'max_depth':[10,15,20],\n\
+      \                   'min_samples_split':[10,15,20]}\n    base_model = RandomForestClassifier(n_estimators\
+      \ = 20, random_state = 2022)\n\n    df = pd.read_csv(dataset.path + '.csv').values\n\
+      \    X = df[:,:-1]\n    y = df[:,-1].astype(int)\n\n    oversample = RandomOverSampler(sampling_strategy='minority')\n\
+      \    X_train, y_train = oversample.fit_resample(X, y)\n\n    gcv = GridSearchCV(base_model,\
+      \ param_grid = param_grid, cv = 3, scoring = 'f1')\n    gcv.fit(X_train, y_train)\n\
+      \n    hyperparameters = gcv.best_params_\n\n    hyper_name = \"hyper.pkl\"\n\
+      \    with open(hyper_name, 'wb') as file:  \n        pickle.dump(hyperparameters,\
+      \ file)\n    bucket = storage.Client().bucket(bucket_name)\n    blob = bucket.blob('{}/{}'.format(\"\
+      churn/metadata\", hyper_name))\n    blob.upload_from_filename(hyper_name)  \n\
+      \n    grid_name = \"gcv.pkl\"\n    with open(grid_name, 'wb') as file:\n   \
+      \     pickle.dump(gcv, file)\n    blob = bucket.blob('{}/{}'.format(\"churn/metadata\"\
+      , grid_name))\n    blob.upload_from_filename(grid_name)\n\n    return (hyperparameters,)\n\
+      \n"
+    args:
+    - --executor_input
+    - {executorInput: null}
+    - --function_to_execute
+    - hyperparameter_tuning

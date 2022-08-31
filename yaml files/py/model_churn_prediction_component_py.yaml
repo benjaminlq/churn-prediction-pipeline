@@ -1,0 +1,88 @@
+name: Deploy churn model
+inputs:
+- {name: model, type: Model}
+- {name: project, type: String}
+- {name: region, type: String}
+- {name: serving_container_image_uri, type: String}
+outputs:
+- {name: vertex_model, type: Model}
+- {name: endpoint, type: String}
+implementation:
+  container:
+    image: python:3.9
+    command:
+    - sh
+    - -c
+    - |2
+
+      if ! [ -x "$(command -v pip)" ]; then
+          python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip
+      fi
+
+      PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet     --no-warn-script-location 'google-cloud-aiplatform' 'sklearn' 'kfp' 'kfp==1.8.12' && "$0" "$@"
+    - sh
+    - -ec
+    - |
+      program_path=$(mktemp -d)
+      printf "%s" "$0" > "$program_path/ephemeral_component.py"
+      python3 -m kfp.v2.components.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+    - |2+
+
+      import kfp
+      from kfp.v2 import dsl
+      from kfp.v2.dsl import *
+      from typing import *
+
+      def deploy_churn_model(model: Input[Model],
+                             project: str, region: str,
+                             serving_container_image_uri: str,
+                         #    vertex_endpoint: Output[Artifact],
+                             vertex_model: Output[Model]) -> NamedTuple("output",[("endpoint",str)]):
+          from google.cloud import aiplatform
+          aiplatform.init(project = project, location = region)
+
+          DISPLAY_NAME = "churn_prediction_v2"
+          MODEL_NAME = "churn_rf_v2"
+          ENDPOINT_NAME = "churn_endpoint_v2"
+
+          def create_endpoint():
+              endpoints = aiplatform.Endpoint.list(
+                  filter = 'display_name = "{}"'.format(ENDPOINT_NAME),
+                  order_by = 'create_time desc',
+                  project = project,
+                  location = region,
+              )
+
+              if len(endpoints) > 0:
+                  endpoint = endpoints[0]
+              else:
+                  endpoint = aiplatform.Endpoint.create(display_name = ENDPOINT_NAME,
+                                                        project = project,
+                                                        location = region)
+
+              return endpoint
+
+          endpoint = create_endpoint()
+          endpoint_info = endpoint.resource_name.split('/')[-1]
+
+          model_upload = aiplatform.Model.upload(display_name = DISPLAY_NAME,
+                                                 artifact_uri = model.uri.replace("model",""),
+                                                 serving_container_image_uri = serving_container_image_uri,
+                                                 serving_container_health_route=f'/v1/models/{MODEL_NAME}',
+                                                 serving_container_predict_route=f'/v1/models/{MODEL_NAME}:predict',
+                                                 serving_container_environment_variables = {"MODEL_NAME":MODEL_NAME,},
+                                                 )
+
+          model_deploy = model_upload.deploy(machine_type = "n1-standard-4",
+                                            endpoint = endpoint,
+                                            traffic_split = {"0":100},
+                                            deployed_model_display_name = DISPLAY_NAME)
+
+          vertex_model.uri = model_deploy.resource_name
+          return (endpoint_info,)
+
+    args:
+    - --executor_input
+    - {executorInput: null}
+    - --function_to_execute
+    - deploy_churn_model

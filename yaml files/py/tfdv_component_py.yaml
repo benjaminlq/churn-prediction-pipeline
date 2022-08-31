@@ -1,0 +1,81 @@
+name: Tfdv validate
+inputs:
+- {name: input_data, type: Dataset}
+- {name: project_id, type: String}
+- {name: region, type: String}
+- {name: gcs_temp_location, type: String}
+- {name: gcs_staging_location, type: String}
+- {name: bucket, type: String}
+outputs:
+- {name: output_data, type: Dataset}
+implementation:
+  container:
+    image: gcr.io/churn-smu/churn-tfdv:latest
+    command:
+    - sh
+    - -c
+    - |2
+
+      if ! [ -x "$(command -v pip)" ]; then
+          python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip
+      fi
+
+      PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet     --no-warn-script-location 'pandas' 'gcsfs' 'google.cloud' 'kfp==1.8.12' && "$0" "$@"
+    - sh
+    - -ec
+    - |
+      program_path=$(mktemp -d)
+      printf "%s" "$0" > "$program_path/ephemeral_component.py"
+      python3 -m kfp.v2.components.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+    - "\nimport kfp\nfrom kfp.v2 import dsl\nfrom kfp.v2.dsl import *\nfrom typing\
+      \ import *\n\ndef tfdv_validate(\n    input_data: Input[Dataset],\n    output_data:\
+      \ Output[Dataset],\n    project_id: str, \n    region: str,\n    gcs_temp_location:\
+      \ str,\n    gcs_staging_location: str,\n    bucket: str,\n):\n\n    from google.cloud\
+      \ import storage\n    import tensorflow_data_validation as tfdv\n    import\
+      \ tensorflow_data_validation.statistics.stats_impl\n    import pandas as pd\n\
+      \    from apache_beam.options.pipeline_options import PipelineOptions, GoogleCloudOptions,\
+      \ StandardOptions, SetupOptions\n\n    job_name = 'dv4'\n    pre_data = pd.read_csv(input_data.path\
+      \ + '.csv')\n    schema_path = 'churn/metadata/schema/orig_stats.pb'\n\n   \
+      \ # Create and set your PipelineOptions.\n    options = PipelineOptions()\n\n\
+      \    # For Cloud execution, set the Cloud Platform project, job_name,\n    #\
+      \ staging location, temp_location and specify DataflowRunner.\n    google_cloud_options\
+      \ = options.view_as(GoogleCloudOptions)\n    google_cloud_options.project =\
+      \ project_id\n    google_cloud_options.job_name = job_name\n    google_cloud_options.staging_location\
+      \ = gcs_staging_location\n    google_cloud_options.temp_location = gcs_temp_location\n\
+      \    google_cloud_options.region = region\n    options.view_as(StandardOptions).runner\
+      \ = 'DataflowRunner'\n\n    setup_options = options.view_as(SetupOptions)\n\
+      \    # PATH_TO_WHL_FILE should point to the downloaded tfdv wheel file.\n  \
+      \  setup_options.extra_packages = ['tensorflow_data_validation-1.8.0-cp37-cp37m-manylinux_2_12_x86_64.manylinux2010_x86_64.whl']\n\
+      \n    storage_client = storage.Client()\n    storage_bucket = storage_client.bucket(bucket)\n\
+      \    schema_exist = storage.Blob(bucket=storage_bucket, name=schema_path).exists(storage_client)\n\
+      \n    res = 'true'\n\n    NUMERICAL_FEATURE_NAMES = [\n        \"SUBS_TENURE\"\
+      ,\n        \"TOT_DAY_LAST_COMPLAINT_CNT\",\n        \"TOT_DAY_LAST_SUSPENDED_CNT\"\
+      ,\n        \"MTH_TO_SUBS_END_CNT\",\n        'REV_AMT_BASE_1',\n        'REV_AMT_BASE_2',\n\
+      \        'CUST_AGE',\n        'PCT_CHNG_IB_SMS_CNT'\n    ]\n\n    EMBEDDING_CATEGORICAL_FEATURES\
+      \ = [\n        \"GENDER_CD\",\n        \"EDUCATION_CD\"]\n\n    if schema_exist:\n\
+      \n        new_stats = tfdv.generate_statistics_from_csv(input_data.path + '.csv',\n\
+      \                                                      output_path=f'gs://{bucket}/churn/tmp/temp.pb',\n\
+      \                                                     pipeline_options=options,\n\
+      \                                                           )\n\n        old_stats\
+      \ = tfdv.load_statistics(f'gs://{bucket}/churn/metadata/schema/orig_stats.pb')\n\
+      \n        schema1 = tfdv.infer_schema(statistics=old_stats)\n        for feature\
+      \ in NUMERICAL_FEATURE_NAMES:\n            tfdv.get_feature(schema1, feature).drift_comparator.jensen_shannon_divergence.threshold\
+      \ = 0.15\n\n        for feature in EMBEDDING_CATEGORICAL_FEATURES:\n       \
+      \     tfdv.get_feature(schema1, feature).drift_comparator.infinity_norm.threshold\
+      \ = 0.1\n\n        drift_anomalies = tfdv.validate_statistics(\n           \
+      \ statistics=new_stats, schema=schema1, previous_statistics=old_stats)\n\n \
+      \       from google.protobuf.json_format import MessageToDict\n        d = MessageToDict(drift_anomalies)\n\
+      \        val = d['driftSkewInfo'][0]['driftMeasurements'][0]['value']\n    \
+      \    thresh = d['driftSkewInfo'][0]['driftMeasurements'][0]['threshold']\n\n\
+      \        if val < thresh:\n            res = 'false'\n\n    if not schema_exist:\
+      \    \n\n        tfdv.generate_statistics_from_csv(input_data.path + '.csv',\n\
+      \                                          output_path=f'gs://{bucket}/churn/metadata/schema/orig_stats.pb',\n\
+      \                                          pipeline_options=options,\n     \
+      \                                          )\n\n    assert res == 'true', \"\
+      Data Validation failed\"\n\n    if res == 'true':\n        pre_data.to_csv(output_data.path\
+      \ + '.csv', index = False, encoding='utf-8-sig')\n\n"
+    args:
+    - --executor_input
+    - {executorInput: null}
+    - --function_to_execute
+    - tfdv_validate

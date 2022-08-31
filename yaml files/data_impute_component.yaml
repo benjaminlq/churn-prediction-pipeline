@@ -1,0 +1,21 @@
+
+name: data_impute
+description: Download the dataset from GCS to pass to next component
+inputs:
+- {name: pre_impute_dataset, type: Dataset}
+- {name: bucket, type: String}
+outputs:
+- {name: post_impute_dataset, type: Dataset}
+implementation:
+  container:
+    image: gcr.io/churn-smu/churn-data-impute-store:latest
+    command:
+    - python
+    - impute_and_store.py
+    args:
+    - --pre_impute_dataset
+    - {inputUri: pre_impute_dataset}
+    - --bucket
+    - {inputValue: bucket}
+    - --post_impute_dataset
+    - {outputUri: post_impute_dataset}

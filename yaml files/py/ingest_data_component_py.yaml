@@ -1,0 +1,40 @@
+name: Ingest data
+inputs:
+- {name: datapath, type: String}
+outputs:
+- {name: dataset, type: Dataset}
+implementation:
+  container:
+    image: python:3.9
+    command:
+    - sh
+    - -c
+    - |2
+
+      if ! [ -x "$(command -v pip)" ]; then
+          python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip
+      fi
+
+      PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet     --no-warn-script-location 'pandas' 'gcsfs' 'kfp==1.8.12' && "$0" "$@"
+    - sh
+    - -ec
+    - |
+      program_path=$(mktemp -d)
+      printf "%s" "$0" > "$program_path/ephemeral_component.py"
+      python3 -m kfp.v2.components.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+    - "\nimport kfp\nfrom kfp.v2 import dsl\nfrom kfp.v2.dsl import *\nfrom typing\
+      \ import *\n\ndef ingest_data(datapath: str,\n                dataset: Output[Dataset]):\n\
+      \n    import pandas as pd\n    df_wine = pd.read_csv(datapath)\n\n    FEATURE_NAMES\
+      \ = [\n        \"GENDER_CD\",\n        \"EDUCATION_CD\",\n        \"TOT_SRV_DROPPED_CNT\"\
+      ,\n        \"TOT_OB_CALL_INTL_ROAM_CNT\",\n        'BARRING_REASON_CD', \n \
+      \       \"TOT_SRV_ADDED_CNT\",\n        \"SUBS_TENURE\",\n        \"TOT_DAY_LAST_COMPLAINT_CNT\"\
+      ,\n        \"TOT_DAY_LAST_SUSPENDED_CNT\",\n        \"MTH_TO_SUBS_END_CNT\"\
+      ,\n        'REV_AMT_BASE_1',\n        'REV_AMT_BASE_2',\n        'CUST_AGE',\n\
+      \        'PCT_CHNG_IB_SMS_CNT',\n        'CHURN_FLG'\n    ]\n\n    df_wine =\
+      \ df_wine[FEATURE_NAMES]\n    df_wine.to_csv(dataset.path + \".csv\" , index=False,\
+      \ encoding='utf-8-sig')\n\n"
+    args:
+    - --executor_input
+    - {executorInput: null}
+    - --function_to_execute
+    - ingest_data
