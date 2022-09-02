@@ -1,11 +1,11 @@
 # End-to-End ML Pipeline for Churn Prediction
 ![](https://img.shields.io/badge/Status-Completed-green)
-![](https://img.shields.io/badge/Domain-Telecommunication-green)
+![](https://img.shields.io/badge/Domain-Telecommunication-red)
 ![](https://img.shields.io/badge/Cloud-Google%20Cloud%20Platform-blue)
 ![](https://img.shields.io/badge/Platform-Vertex%20AI-blue)
 ![](https://img.shields.io/badge/Package-Scikit--Learn-orange)
 ![](https://img.shields.io/badge/Package-TFX-orange) <br>
-![](https://img.shields.io/badge/Language-Python-yellowgreen)
+![](https://img.shields.io/badge/Language-Python-lightgreen)
 ![](https://img.shields.io/badge/Language-Docker-yellowgreen)
 ![](https://img.shields.io/badge/Language-Yaml-yellowgreen)
 
