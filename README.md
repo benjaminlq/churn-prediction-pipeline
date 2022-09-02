@@ -1,4 +1,5 @@
 # End-to-End ML Pipeline for Churn Prediction
+![](https://img.shields.io/badge/Status-Completed-green)
 ![](https://img.shields.io/badge/Domain-Telecommunication-green)
 ![](https://img.shields.io/badge/Cloud-Google%20Cloud%20Platform-blue)
 ![](https://img.shields.io/badge/Platform-Vertex%20AI-blue)
